@@ -1,0 +1,15 @@
+llms:
+  main:
+    type: 'groq'
+    model_id: 'llama3-70b-8192'
+    aws_region: 'us-east-1'
+    temperature: 0
+
+  fallback:
+    type: 'groq'
+    model_id: 'llama3-70b-8192'
+    aws_region: 'us-east-1'
+    temperature: 0
+
+llm-tracing:
+  type: 'langfuse' # 'langfuse' or 'none'
