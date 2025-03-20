@@ -33,14 +33,26 @@ export default function Home() {
   }, [chatHistory]);
 
   const updateHistory = async (data) => {
-    setChatHistory((history) => [
-      ...history,
-      {
-        type: "ai",
-        content: data,
-        timestamp: Date.now(),
-      },
-    ]);
+    const timestamp = Date.now();
+
+    const ai = {
+      type: "ai",
+      content: data.content,
+      timestamp,
+    };
+
+    const tool_output = {
+      type: "tool_output",
+      content: data.output,
+      tool_type: data.name,
+      timestamp,
+    };
+
+    if (data.type === "tool_output") {
+      setChatHistory((history) => [...history, tool_output]);
+    } else {
+      setChatHistory((history) => [...history, ai]);
+    }
   };
 
   // Send query to the backend and handle SSE using fetch :)
@@ -127,7 +139,7 @@ export default function Home() {
               chat.type === "query" ? (
                 <QueryCard key={`key-${idx + 1}`} content={chat.content} />
               ) : (
-                <AiResponseCard key={`key-${idx + 1}`} content={chat.content} />
+                <AiResponseCard key={`key-${idx + 1}`} chat={chat} />
               )
             )}
 

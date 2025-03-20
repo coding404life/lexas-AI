@@ -22,7 +22,6 @@ export const handleStreamData = (value, updateHistory, setIsProcessing) => {
 
     const eventType = eventLine.replace("event:", "").trim();
     const data = dataLine.replace("data:", "");
-    const timestamp = Date.now();
 
     // Handle different event types
     switch (eventType) {
@@ -30,56 +29,22 @@ export const handleStreamData = (value, updateHistory, setIsProcessing) => {
         concatenatedResponse += data;
         break;
 
-      case "tool_use":
-        try {
-          const toolData = JSON.parse(data);
-          setAiResponse((prev) => [
-            ...prev,
-            {
-              type: "tool_use",
-              tool: toolData.name,
-              arguments: toolData.arguments,
-              toolCallId: toolData.id,
-              timestamp: timestamp,
-            },
-          ]);
-        } catch (e) {
-          console.error("Failed to parse tool_use data:", e);
-        }
-        break;
-
       case "tool_output":
         try {
           const outputData = JSON.parse(data);
-          const toolType = outputData.tool_name; // get the tool type
-          setAiResponse((prev) => [
-            ...prev,
-            {
-              type: "tool_output",
-              toolType,
-              result: outputData.output,
-              timestamp: timestamp,
-            },
-          ]);
+          updateHistory(outputData);
         } catch (e) {
           console.error("Failed to parse tool_output data:", e);
         }
         break;
 
       case "error":
-        setAiResponse((prev) => [
-          ...prev,
-          {
-            type: "error",
-            content: data,
-            timestamp: timestamp,
-          },
-        ]);
+        console.error("Failed to parse tool_output data:", e);
         setIsProcessing(false);
         break;
 
       case "end":
-        updateHistory(concatenatedResponse);
+        updateHistory({ content: concatenatedResponse, type: "ai" });
         concatenatedResponse = "";
         setIsProcessing(false);
         break;

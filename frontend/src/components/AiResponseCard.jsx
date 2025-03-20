@@ -1,4 +1,10 @@
-const AiResponseCard = ({ content }) => {
+const AiResponseCard = ({ chat }) => {
+  if (!chat.content) {
+    return;
+  }
+
+  // TODO: handle tool use and tool output
+
   return (
     <div
       className="p-4 rounded-lg shadow-md mb-4 border border-gray-700
@@ -13,14 +19,14 @@ const AiResponseCard = ({ content }) => {
           <h3 className="text-sm font-semibold text-gray-300">
             Lex’s Response
           </h3>
-          {Array.isArray(content) ? (
-            content.map((part, idx) => (
+          {Array.isArray(chat.content) ? (
+            chat.content.map((part, idx) => (
               <span key={idx + 2} className="text-gray-200">
                 {part.content}
               </span>
             ))
           ) : (
-            <p className="text-gray-200">{content}</p>
+            <p className="text-gray-200">{chat.content}</p>
           )}
         </div>
       </div>
