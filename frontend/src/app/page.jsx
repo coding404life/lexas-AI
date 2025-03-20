@@ -2,15 +2,15 @@
 
 import AiResponseCard from "@/components/AiResponseCard";
 import QueryCard from "@/components/QueryCard";
+import { handleStreamData } from "@/lib/handleStreamData";
 import { useState, useEffect, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 
 // Main page component
 export default function Home() {
-  const [responses, setResponses] = useState([]);
-  const [input, setInput] = useState("");
+  const [chatHistory, setChatHistory] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [aiResponse, setAiResponse] = useState([]);
+  const inputRef = useRef("");
   const responseAreaRef = useRef(null);
 
   // Session ID management
@@ -30,128 +30,82 @@ export default function Home() {
     if (responseAreaRef.current) {
       responseAreaRef.current.scrollTop = responseAreaRef.current.scrollHeight;
     }
-  }, [responses, aiResponse]);
+  }, [chatHistory]);
 
-  const handleStreamData = (value) => {
-    // input: 'event: chunk\r\ndata:  go\r\n\r\n'
-    // Split the value into individual events
-    const events = value.split(/\r?\n\r?\n/).filter((e) => e.trim());
-
-    // Process each event
-    events.forEach((eventStr) => {
-      // Split the event into lines
-      const eventLines = eventStr.split(/\r?\n/);
-
-      // Need at least two lines for a valid event (event and data)
-      if (eventLines.length < 2) return;
-
-      // Extract event type and data
-      const eventLine = eventLines[0];
-      const dataLine = eventLines[1];
-
-      if (!eventLine.startsWith("event:") || !dataLine.startsWith("data:"))
-        return;
-
-      const eventType = eventLine.replace("event:", "").trim();
-      const data = dataLine.replace("data:", "");
-
-      // Handle different event types
-      switch (eventType) {
-        case "chunk":
-          setAiResponse((prev) => [...prev, { type: "text", content: data }]);
-          break;
-
-        case "tool_use":
-          try {
-            const toolData = JSON.parse(data);
-            setAiResponse((prev) => [
-              ...prev,
-              {
-                type: "tool_use",
-                tool: toolData.name,
-                arguments: toolData.arguments,
-                toolCallId: toolData.id,
-              },
-            ]);
-          } catch (e) {
-            console.error("Failed to parse tool_use data:", e);
-          }
-          break;
-
-        case "tool_output":
-          try {
-            const outputData = JSON.parse(data);
-            setAiResponse((prev) => [
-              ...prev,
-              {
-                type: "tool_output",
-                result: outputData.output,
-              },
-            ]);
-          } catch (e) {
-            console.error("Failed to parse tool_output data:", e);
-          }
-          break;
-
-        case "end":
-          setIsProcessing(false);
-          break;
-
-        default:
-          console.log(`Unknown event type: ${eventType}`);
-      }
-    });
+  const updateHistory = async (data) => {
+    setChatHistory((history) => [
+      ...history,
+      {
+        type: "ai",
+        content: data,
+        timestamp: Date.now(),
+      },
+    ]);
   };
 
   // Send query to the backend and handle SSE using fetch :)
   const sendQuery = async (query) => {
-    setResponses((prev) => [...prev, { type: "query", content: query }]);
-    setAiResponse([]);
     setIsProcessing(true);
 
-    const response = await fetch("http://localhost:8000/query", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "text/event-stream",
-      },
-      body: JSON.stringify({
-        session_id: sessionId,
-        query: query,
-      }),
-    });
+    try {
+      const response = await fetch("http://localhost:8000/query", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          session_id: sessionId,
+          query,
+        }),
+      });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Failed to connect to SSE endpoint: ${response.status} - ${errorText}`
-      );
-    }
-
-    if (!response.body) {
-      throw new Error("No response body");
-    }
-
-    const reader = response.body
-      .pipeThrough(new TextDecoderStream())
-      .getReader();
-
-    while (true) {
-      const { value, done } = await reader.read();
-
-      if (done) {
-        break;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to connect to SSE endpoint: ${response.status} - ${errorText}`
+        );
       }
 
-      handleStreamData(value);
+      if (!response.body) {
+        throw new Error("No response body");
+      }
+
+      const reader = response.body
+        .pipeThrough(new TextDecoderStream())
+        .getReader();
+
+      while (true) {
+        const { value, done } = await reader.read();
+
+        if (done) {
+          break;
+        }
+
+        handleStreamData(value, updateHistory, setIsProcessing);
+      }
+    } catch (e) {
+      console.error("Failed to connect to SSE endpoint:", e);
     }
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (input.trim() && !isProcessing) {
-      sendQuery(input);
-      setInput("");
+    const inputValue = inputRef.current.value;
+
+    setChatHistory((history) => [
+      ...history,
+      {
+        id: uuidv4(),
+        type: "query",
+        content: inputValue,
+        timestamp: Date.now(),
+      },
+    ]);
+
+    if (inputValue.trim() && !isProcessing) {
+      sendQuery(inputValue);
+      inputRef.current.value = "";
     }
   };
 
@@ -167,11 +121,15 @@ export default function Home() {
           className="flex-1 overflow-y-auto space-y-4 py-4"
           style={{ scrollbarWidth: "thin", scrollbarColor: "#888 transparent" }}
         >
-          {responses.map((item, idx) => (
-            <QueryCard key={idx + 1} content={item.content} />
-          ))}
-
-          {aiResponse.length > 0 && <AiResponseCard content={aiResponse} />}
+          {chatHistory
+            .sort((a, b) => a.timestamp - b.timestamp)
+            .map((chat, idx) =>
+              chat.type === "query" ? (
+                <QueryCard key={`key-${idx + 1}`} content={chat.content} />
+              ) : (
+                <AiResponseCard key={`key-${idx + 1}`} content={chat.content} />
+              )
+            )}
 
           {isProcessing && (
             <div className="text-center italic text-gray-500">
@@ -186,8 +144,7 @@ export default function Home() {
         >
           <input
             type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
+            ref={inputRef}
             placeholder="Ask Lex about SuperCar..."
             className="flex-1 p-2 rounded-lg bg-gray-800 border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
             disabled={isProcessing}
